@@ -1,67 +1,55 @@
 #!/usr/bin/python3
-"""pack and deploy content to server
-"""
-from fabric.api import local, env, run, put
+"""web server distribution
+    """
+from fabric.api import *
+import tarfile
+import os.path
+import re
 from datetime import datetime
-import os
-env.hosts = ['35.231.156.161', '34.73.64.44']
+
 env.user = 'ubuntu'
+env.hosts = ["104.196.155.240", "34.74.146.120"]
+env.key_filename = "~/id_rsa"
 
 
 def do_pack():
-    """pack all content within web_static
-    into a .tgz archive
-    The archive will be put in versions/
+    """distributes an archive to your web servers
     """
-    if not os.path.exists("versions"):
-        local("mkdir versions")
-    now = datetime.now()
-    name = "versions/web_static_{}.tgz".format(
-        now.strftime("%Y%m%d%H%M%S")
-    )
-    cmd = "tar -cvzf {} {}".format(name, "web_static")
-    result = local(cmd)
-    if not result.failed:
-        return name
+    target = local("mkdir -p ./versions")
+    name = str(datetime.now()).replace(" ", '')
+    opt = re.sub(r'[^\w\s]', '', name)
+    tar = local('tar -cvzf versions/web_static_{}.tgz web_static'.format(opt))
+    if os.path.exists("./versions/web_static_{}.tgz".format(opt)):
+        return os.path.normpath("./versions/web_static_{}.tgz".format(opt))
+    else:
+        return None
 
 
 def do_deploy(archive_path):
-    """deploy package to remote server
-    Arguments:
-        archive_path: path to archive to deploy
+    """distributes an archive to your web servers
     """
-    if not archive_path or not os.path.exists(archive_path):
+    if os.path.exists(archive_path) is False:
         return False
-    put(archive_path, '/tmp')
-    ar_name = archive_path[archive_path.find("/") + 1: -4]
     try:
-        run('mkdir -p /data/web_static/releases/{}/'.format(ar_name))
-        run('tar -xzf /tmp/{}.tgz -C /data/web_static/releases/{}/'.format(
-                ar_name, ar_name
-        ))
-        run('rm /tmp/{}.tgz'.format(ar_name))
-        run('mv /data/web_static/releases/{}/web_static/* \
-            /data/web_static/releases/{}/'.format(
-                ar_name, ar_name
-        ))
-        run('rm -rf /data/web_static/releases/{}/web_static'.format(
-            ar_name
-        ))
-        run('rm -rf /data/web_static/current')
-        run('ln -s /data/web_static/releases/{}/ \
-            /data/web_static/current'.format(
-            ar_name
-        ))
-        print("New version deployed!")
+        arc = archive_path.split("/")
+        base = arc[1].strip('.tgz')
+        put(archive_path, '/tmp/')
+        sudo('mkdir -p /data/web_static/releases/{}'.format(base))
+        main = "/data/web_static/releases/{}".format(base)
+        sudo('tar -xzf /tmp/{} -C {}/'.format(arc[1], main))
+        sudo('rm /tmp/{}'.format(arc[1]))
+        sudo('mv {}/web_static/* {}/'.format(main, main))
+        sudo('rm -rf /data/web_static/current')
+        sudo('ln -s {}/ "/data/web_static/current"'.format(main))
         return True
     except:
         return False
 
 
 def deploy():
-    """pack web_static content and deploy it to web servers
-    """
-    pack = do_pack()
-    if pack:
-        return do_deploy(pack)
-    return False
+    """distributes an archive to your web servers"""
+    path = do_pack()
+    if path is None:
+        return False
+    f = do_deploy(path)
+    return f
